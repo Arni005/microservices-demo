@@ -1,0 +1,43 @@
+name: promote
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [staging, prod]
+        required: true
+      tag:
+        description: Image tag (full git SHA) to promote
+        required: true
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Check out gitops repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/microservices-gitops
+          token: ${{ secrets.GITOPS_PAT }}
+
+      - name: Update tag and open a PR
+        env:
+          GH_TOKEN: ${{ secrets.GITOPS_PAT }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -e
+          BRANCH="promote-${ENVIRONMENT}-${TAG:0:7}"
+          git config user.name "ci-bot"
+          git config user.email "ci-bot@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          yq -i ".images.tag = \"${TAG}\"" "envs/${ENVIRONMENT}/values.yaml"
+          git commit -am "${ENVIRONMENT}: promote ${TAG}"
+          git push origin "$BRANCH"
+          gh pr create \
+            --title "Promote ${TAG:0:7} to ${ENVIRONMENT}" \
+            --body "Approved through the ${ENVIRONMENT} environment gate." \
+            --base main --head "$BRANCH"
