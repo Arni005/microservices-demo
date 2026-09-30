@@ -80,3 +80,28 @@ jobs:
           labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  update-dev:
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out gitops repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/microservices-gitops
+          token: ${{ secrets.GITOPS_PAT }}
+
+      - name: Bump dev image tag
+        run: |
+          yq -i '.images.tag = "${{ github.sha }}"' envs/dev/values.yaml
+          git config user.name "ci-bot"
+          git config user.email "ci-bot@users.noreply.github.com"
+          git add envs/dev/values.yaml
+          if git diff --cached --quiet; then
+            echo "Tag already up to date, nothing to commit."
+            exit 0
+          fi
+          git commit -m "dev: deploy ${{ github.sha }}"
+          git pull --rebase
+          git push
